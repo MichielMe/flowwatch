@@ -1,0 +1,315 @@
+# src/flowwatch/app.py
+from __future__ import annotations
+
+import fnmatch
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
+from threading import Event
+from typing import Callable, Iterable, Optional, Sequence
+
+from rich.logging import RichHandler
+from watchfiles import Change, watch
+
+
+@dataclass(frozen=True)
+class FileEvent:
+    """
+    A normalized event passed to handler functions.
+
+    Attributes
+    ----------
+    change:
+        The underlying watchfiles.Change (added, modified, deleted).
+    path:
+        The full path to the file that triggered the event.
+    root:
+        The root folder this handler is watching.
+    pattern:
+        The glob pattern that matched this file (if any).
+    """
+
+    change: Change
+    path: Path
+    root: Path
+    pattern: Optional[str] = None
+
+    @property
+    def is_created(self) -> bool:
+        return self.change == Change.added
+
+    @property
+    def is_modified(self) -> bool:
+        return self.change == Change.modified
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.change == Change.deleted
+
+
+@dataclass
+class _Handler:
+    """
+    Internal representation of a handler registration.
+    """
+
+    func: Callable[[FileEvent], None]
+    root: Path
+    events: frozenset[Change]
+    pattern: Optional[str]
+    process_existing: bool
+    priority: int
+
+    def matches(self, change: Change, path: Path) -> bool:
+        """
+        Return True if this handler should be triggered for (change, path).
+        """
+        if change not in self.events:
+            return False
+
+        # Path must be under root
+        try:
+            rel = path.relative_to(self.root)
+        except ValueError:
+            return False
+
+        # Ignore directories
+        if path.is_dir():
+            return False
+
+        # Pattern match (against relative path)
+        if self.pattern:
+            if not (
+                fnmatch.fnmatch(path.name, self.pattern)
+                or fnmatch.fnmatch(str(rel), self.pattern)
+            ):
+                return False
+
+        return True
+
+
+class FlowWatchApp:
+    """
+    Main application object for FlowWatch.
+
+    - Register handlers bound to roots / patterns / events.
+    - Run a single watchfiles loop for all roots.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str = "flowwatch",
+        debounce: int = 5,
+        recursive: bool = True,
+        max_workers: int = 4,
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        self.name = name
+        self.debounce = debounce * 1000
+        self.recursive = recursive
+        self.max_workers = max_workers
+        self._handlers: list[_Handler] = []
+        self._executor: Optional[ThreadPoolExecutor] = None
+
+        if logger is None:
+            logger = logging.getLogger(name)
+            if not logger.handlers:
+                handler = RichHandler(
+                    rich_tracebacks=True,
+                    markup=True,
+                    show_path=False,
+                )
+                # RichHandler already formats nicely; keep formatter simple
+                formatter = logging.Formatter("%(message)s")
+                handler.setFormatter(formatter)
+                logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+
+        self.logger = logger
+
+    # ---------- public API ----------
+
+    @property
+    def handlers(self) -> tuple[_Handler, ...]:
+        """
+        Read-only view of registered handlers (used by the CLI to render tables).
+        """
+        return tuple(self._handlers)
+
+    def add_handler(
+        self,
+        func: Callable[[FileEvent], None],
+        *,
+        root: str | Path,
+        events: Iterable[Change],
+        pattern: Optional[str] = None,
+        process_existing: bool = False,
+        priority: int = 0,
+    ) -> None:
+        """
+        Register a handler function for one or more file events.
+        """
+        root_path = Path(root).resolve()
+
+        handler = _Handler(
+            func=func,
+            root=root_path,
+            events=frozenset(events),
+            pattern=pattern,
+            process_existing=process_existing,
+            priority=priority,
+        )
+
+        self.logger.debug(
+            "Registering handler %r for root=%s pattern=%r events=%s "
+            "process_existing=%s priority=%d",
+            func,
+            root_path,
+            pattern,
+            [e.name for e in handler.events],
+            process_existing,
+            priority,
+        )
+
+        self._handlers.append(handler)
+        # Keep handlers sorted by priority (desc)
+        self._handlers.sort(key=lambda h: h.priority, reverse=True)
+
+    # ---------- main run loop ----------
+
+    def run(self, *, stop_event: Optional[Event] = None) -> None:
+        """
+        Start watching and dispatching events.
+
+        This call blocks until:
+        - stop_event is set, or
+        - KeyboardInterrupt (Ctrl+C)
+        """
+        if not self._handlers:
+            raise RuntimeError("No handlers registered for FlowWatchApp.")
+
+        if stop_event is None:
+            stop_event = Event()
+
+        if self._executor is not None:
+            raise RuntimeError("FlowWatchApp.run() called while already running.")
+
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
+
+        try:
+            # Initial processing of existing files (if requested)
+            self._process_existing_files()
+
+            roots = self._collect_roots()
+            roots_str = ", ".join(str(r) for r in roots)
+            self.logger.info(
+                "[bold green]FlowWatch[/] starting on roots: [cyan]%s[/]", roots_str
+            )
+
+            for changes in watch(
+                *roots,
+                debounce=self.debounce,
+                recursive=self.recursive,
+                stop_event=stop_event,
+            ):
+                if not changes:
+                    continue
+                self._dispatch_batch(changes)
+
+        except KeyboardInterrupt:
+            self.logger.info("[yellow]FlowWatch interrupted by user.[/]")
+        finally:
+            self.logger.info("[dim]FlowWatch shutting down '%s'...[/]", self.name)
+            if self._executor is not None:
+                self._executor.shutdown(wait=True)
+            self._executor = None
+
+    # ---------- internals ----------
+
+    def _collect_roots(self) -> Sequence[Path]:
+        return sorted({h.root for h in self._handlers})
+
+    def _process_existing_files(self) -> None:
+        """
+        For handlers with process_existing=True and Change.added in events,
+        walk the root and submit events for existing files.
+        """
+        for handler in self._handlers:
+            if not handler.process_existing:
+                continue
+            if Change.added not in handler.events:
+                continue
+
+            self.logger.info(
+                "Processing existing files for root=[cyan]%s[/] pattern=[magenta]%r[/]",
+                handler.root,
+                handler.pattern,
+            )
+
+            for path in handler.root.rglob("*"):
+                if not path.is_file():
+                    continue
+                if handler.pattern and not (
+                    fnmatch.fnmatch(path.name, handler.pattern)
+                    or fnmatch.fnmatch(
+                        str(path.relative_to(handler.root)), handler.pattern
+                    )
+                ):
+                    continue
+
+                event = FileEvent(
+                    change=Change.added,
+                    path=path,
+                    root=handler.root,
+                    pattern=handler.pattern,
+                )
+                self._submit(handler, event)
+
+    def _dispatch_batch(self, changes: set[tuple[Change, str]]) -> None:
+        """
+        Dispatch a batch of changes coming from watchfiles.
+        """
+        for change, raw_path in changes:
+            path = Path(raw_path).resolve()
+            for handler in self._handlers:
+                if not handler.matches(change, path):
+                    continue
+                event = FileEvent(
+                    change=change,
+                    path=path,
+                    root=handler.root,
+                    pattern=handler.pattern,
+                )
+                self._submit(handler, event)
+
+    def _submit(self, handler: _Handler, event: FileEvent) -> None:
+        """
+        Submit a handler call to the executor, with error handling.
+        """
+        if self._executor is None:
+            self.logger.error(
+                "[red]Executor not initialized, dropping event[/] %r", event
+            )
+            return
+
+        self.logger.debug(
+            "Dispatching [blue]%s[/] for [cyan]%s[/] to [magenta]%r[/]",
+            event.change.name,
+            event.path,
+            handler.func,
+        )
+
+        def _call() -> None:
+            try:
+                handler.func(event)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.exception(
+                    "[red]Exception in handler[/] %r for %s: %s",
+                    handler.func,
+                    event.path,
+                    exc,
+                )
+
+        self._executor.submit(_call)

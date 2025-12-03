@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Michiel Meire", email = "michiel.meire1@gmail.com" }]
-dependencies = ["rich>=14.2.0", "typer>=0.20.0"]
+dependencies = ["rich>=14.2.0", "typer>=0.20.0", "watchfiles>=1.1.1"]
 
 keywords = [
     "watchfiles",
@@ -29,7 +29,7 @@ classifiers = [
 Source = "https://github.com/MichielMe/flowwatch"
 
 [project.scripts]
-flowwatch = "flowwatch:main"
+flowwatch = "flowwatch.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -2,15 +2,48 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import logging
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
-from typing import Callable, Iterable, Optional, Sequence
 
 from rich.logging import RichHandler
 from watchfiles import Change, watch
+
+
+class JsonFormatter(logging.Formatter):
+    """
+    JSON formatter for structured logging in production environments.
+
+    Outputs log records as single-line JSON objects with consistent fields,
+    suitable for log aggregation systems like ELK, Datadog, or CloudWatch.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_data: dict[str, object] = {
+            "timestamp": datetime.now(tz=UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        # Add exception info if present
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+
+        # Add extra fields if any
+        if hasattr(record, "event_type"):
+            log_data["event_type"] = record.event_type
+        if hasattr(record, "file_path"):
+            log_data["file_path"] = record.file_path
+        if hasattr(record, "handler_name"):
+            log_data["handler_name"] = record.handler_name
+
+        return json.dumps(log_data, default=str)
 
 
 @dataclass(frozen=True)
@@ -33,7 +66,7 @@ class FileEvent:
     change: Change
     path: Path
     root: Path
-    pattern: Optional[str] = None
+    pattern: str | None = None
 
     @property
     def is_created(self) -> bool:
@@ -57,7 +90,7 @@ class _Handler:
     func: Callable[[FileEvent], None]
     root: Path
     events: frozenset[Change]
-    pattern: Optional[str]
+    pattern: str | None
     process_existing: bool
     priority: int
 
@@ -74,17 +107,15 @@ class _Handler:
         except ValueError:
             return False
 
-        # Ignore directories
-        if path.is_dir():
+        # Ignore directories (but not for deleted events since path no longer exists)
+        if change != Change.deleted and path.is_dir():
             return False
 
         # Pattern match (against relative path)
         if self.pattern:
-            if not (
-                fnmatch.fnmatch(path.name, self.pattern)
-                or fnmatch.fnmatch(str(rel), self.pattern)
-            ):
-                return False
+            return fnmatch.fnmatch(path.name, self.pattern) or fnmatch.fnmatch(
+                str(rel), self.pattern
+            )
 
         return True
 
@@ -101,35 +132,73 @@ class FlowWatchApp:
         self,
         *,
         name: str = "flowwatch",
-        debounce: int = 5,
+        debounce: float = 1.6,
         recursive: bool = True,
         max_workers: int = 4,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
+        json_logs: bool = False,
     ) -> None:
+        """
+        Initialize a FlowWatchApp instance.
+
+        Parameters
+        ----------
+        name:
+            Application name (used for logging).
+        debounce:
+            Debounce interval in seconds. Events within this window are
+            batched together. Default is 1.6 seconds.
+        recursive:
+            Whether to watch directories recursively.
+        max_workers:
+            Maximum number of worker threads for handler execution.
+        logger:
+            Optional custom logger. If not provided, a Rich-formatted
+            logger is created (or JSON logger if json_logs=True).
+        json_logs:
+            If True, use JSON-formatted logging suitable for production
+            environments and log aggregation systems. Ignored if a custom
+            logger is provided.
+        """
         self.name = name
-        self.debounce = debounce * 1000
+        self._debounce_ms = int(debounce * 1000)
         self.recursive = recursive
         self.max_workers = max_workers
         self._handlers: list[_Handler] = []
-        self._executor: Optional[ThreadPoolExecutor] = None
+        self._executor: ThreadPoolExecutor | None = None
+        self._json_logs = json_logs
 
         if logger is None:
             logger = logging.getLogger(name)
             if not logger.handlers:
-                handler = RichHandler(
-                    rich_tracebacks=True,
-                    markup=True,
-                    show_path=False,
-                )
-                # RichHandler already formats nicely; keep formatter simple
-                formatter = logging.Formatter("%(message)s")
-                handler.setFormatter(formatter)
-                logger.addHandler(handler)
+                if json_logs:
+                    log_handler: logging.Handler = logging.StreamHandler()
+                    log_handler.setFormatter(JsonFormatter())
+                else:
+                    log_handler = RichHandler(
+                        rich_tracebacks=True,
+                        markup=True,
+                        show_path=False,
+                    )
+                    # RichHandler already formats nicely; keep formatter simple
+                    formatter = logging.Formatter("%(message)s")
+                    log_handler.setFormatter(formatter)
+                logger.addHandler(log_handler)
             logger.setLevel(logging.INFO)
 
         self.logger = logger
 
     # ---------- public API ----------
+
+    @property
+    def debounce(self) -> float:
+        """Debounce interval in seconds."""
+        return self._debounce_ms / 1000
+
+    @debounce.setter
+    def debounce(self, value: float) -> None:
+        """Set debounce interval in seconds."""
+        self._debounce_ms = int(value * 1000)
 
     @property
     def handlers(self) -> tuple[_Handler, ...]:
@@ -144,7 +213,7 @@ class FlowWatchApp:
         *,
         root: str | Path,
         events: Iterable[Change],
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
         process_existing: bool = False,
         priority: int = 0,
     ) -> None:
@@ -179,7 +248,7 @@ class FlowWatchApp:
 
     # ---------- main run loop ----------
 
-    def run(self, *, stop_event: Optional[Event] = None) -> None:
+    def run(self, *, stop_event: Event | None = None) -> None:
         """
         Start watching and dispatching events.
 
@@ -210,7 +279,7 @@ class FlowWatchApp:
 
             for changes in watch(
                 *roots,
-                debounce=self.debounce,
+                debounce=self._debounce_ms,
                 recursive=self.recursive,
                 stop_event=stop_event,
             ):
@@ -304,12 +373,11 @@ class FlowWatchApp:
         def _call() -> None:
             try:
                 handler.func(event)
-            except Exception as exc:  # noqa: BLE001
+            except Exception:
                 self.logger.exception(
-                    "[red]Exception in handler[/] %r for %s: %s",
+                    "[red]Exception in handler[/] %r for %s",
                     handler.func,
                     event.path,
-                    exc,
                 )
 
         self._executor.submit(_call)

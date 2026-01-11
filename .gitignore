@@ -5,7 +5,23 @@ build/
 dist/
 wheels/
 *.egg-info
-
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.vscode/
+.idea/
+.DS_Store
+.env
+.env.local
+.env.development.local
 # Virtual environments
 .venv
 .env
+
+# Example watch directories (for testing)
+watch_inbox/
+watch_data/
+.watch_inbox/
+.watch_data/
+
+.coverage

@@ -35,7 +35,7 @@ def _import_target(target: str) -> None:
             raise typer.Exit(1)
 
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)  # type: ignore[call-arg]
+        spec.loader.exec_module(module)
     else:
         importlib.import_module(target)
 
@@ -49,12 +49,25 @@ def run(
             "Examples: 'example_usage' or 'examples/example_usage.py'"
         ),
     ),
-    debounce: int = typer.Option(5, "--debounce", "-d"),
+    debounce: float = typer.Option(
+        1.6, "--debounce", "-d", help="Debounce interval in seconds."
+    ),
     max_workers: int = typer.Option(4, "--max-workers", "-w"),
     recursive: bool = typer.Option(
         True, "--recursive/--no-recursive", help="Watch directories recursively."
     ),
     log_level: str = typer.Option("INFO", "--log-level", "-l"),
+    json_logs: bool = typer.Option(
+        False,
+        "--json-logs",
+        help="Use JSON-formatted logs (for production/log aggregation).",
+    ),
+    dashboard: bool = typer.Option(
+        False, "--dashboard", "--ui", help="Open real-time web dashboard."
+    ),
+    dashboard_port: int = typer.Option(
+        8765, "--dashboard-port", help="Port for the dashboard server."
+    ),
 ) -> None:
     """Run FlowWatch by importing a module/file that registers handlers."""
     console.rule("[bold green]FlowWatch[/bold green]")
@@ -64,12 +77,22 @@ def run(
         _import_target(target)
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Error importing target[/red]: {exc!r}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     app_obj = default_app
     app_obj.debounce = debounce
     app_obj.max_workers = max_workers
     app_obj.recursive = recursive
+
+    # Configure JSON logging if requested
+    if json_logs:
+        from .app import JsonFormatter
+
+        # Replace existing handlers with JSON handler
+        app_obj.logger.handlers.clear()
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonFormatter())
+        app_obj.logger.addHandler(handler)
 
     level = getattr(logging, log_level.upper(), logging.INFO)
     app_obj.logger.setLevel(level)
@@ -109,15 +132,36 @@ def run(
         )
 
     console.print(table)
-    console.print(
-        Panel.fit(
-            f"Watching [bold]{len(roots_set)}[/] root(s). "
-            "Press [bold]Ctrl+C[/] to stop.",
-            border_style="green",
-        )
-    )
 
-    run_default_app()
+    if dashboard:
+        try:
+            from .dashboard import run_dashboard
+
+            run_dashboard(app_obj, port=dashboard_port, open_browser=True)
+            console.print(
+                Panel.fit(
+                    f"[bold]Dashboard:[/] [cyan]http://127.0.0.1:{dashboard_port}[/]\n"
+                    f"Watching [bold]{len(roots_set)}[/] root(s). "
+                    "Press [bold]Ctrl+C[/] to stop.",
+                    border_style="green",
+                )
+            )
+        except ImportError:
+            console.print(
+                "[yellow]Dashboard dependencies not installed.[/]\n"
+                "Install with: [cyan]pip install flowwatch[dashboard][/]"
+            )
+            raise typer.Exit(1) from None
+    else:
+        console.print(
+            Panel.fit(
+                f"Watching [bold]{len(roots_set)}[/] root(s). "
+                "Press [bold]Ctrl+C[/] to stop.",
+                border_style="green",
+            )
+        )
+
+    run_default_app(pretty=False)
 
 
 def main() -> None:

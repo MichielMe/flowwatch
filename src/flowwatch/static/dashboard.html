@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowWatch</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #09090b;
+            --bg-secondary: #111113;
+            --bg-tertiary: #18181b;
+            --bg-elevated: #1f1f23;
+            --border-subtle: #27272a;
+            --border-default: #3f3f46;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --text-tertiary: #71717a;
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #a78bfa;
+            --status-created: #10b981;
+            --status-created-bg: rgba(16, 185, 129, 0.12);
+            --status-modified: #f59e0b;
+            --status-modified-bg: rgba(245, 158, 11, 0.12);
+            --status-deleted: #ef4444;
+            --status-deleted-bg: rgba(239, 68, 68, 0.12);
+            --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+            --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Navbar */
+        .navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 0 32px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .logo-icon {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon svg {
+            width: 16px;
+            height: 16px;
+            color: white;
+        }
+
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: var(--status-created-bg);
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--status-created);
+        }
+
+        .status-pill .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        /* Main */
+        .main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px 32px;
+        }
+
+        /* Stats Row */
+        .stats-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 16px 20px;
+            flex: 1;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+        }
+
+        .stat-value.green {
+            color: var(--status-created);
+        }
+
+        .stat-value.amber {
+            color: var(--status-modified);
+        }
+
+        .stat-value.red {
+            color: var(--status-deleted);
+        }
+
+        /* Section Box */
+        .section-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            margin-bottom: 24px;
+            opacity: 0;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .section-count {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            background: var(--bg-tertiary);
+            padding: 2px 8px;
+            border-radius: var(--radius-sm);
+        }
+
+        /* Directories */
+        .dirs-grid {
+            display: flex;
+            gap: 12px;
+            padding: 16px 20px;
+            flex-wrap: wrap;
+        }
+
+        .dir-chip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+            transition: border-color var(--transition-fast);
+        }
+
+        .dir-chip:hover {
+            border-color: var(--border-default);
+        }
+
+        .dir-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-primary);
+            opacity: 0.15;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .dir-icon svg {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            color: var(--accent-primary);
+        }
+
+        .dir-name {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .dir-path {
+            font-size: 11px;
+            font-family: var(--font-mono);
+            color: var(--text-tertiary);
+            margin-top: 2px;
+        }
+
+        /* Events Table */
+        .events-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .events-table th {
+            text-align: left;
+            padding: 10px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .events-table td {
+            padding: 12px 16px;
+            font-size: 13px;
+            border-bottom: 1px solid var(--border-subtle);
+            vertical-align: middle;
+        }
+
+        .events-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .events-table tbody tr {
+            transition: background var(--transition-fast);
+            cursor: pointer;
+        }
+
+        .events-table tbody tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .event-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .event-status.created {
+            background: var(--status-created-bg);
+            color: var(--status-created);
+        }
+
+        .event-status.modified {
+            background: var(--status-modified-bg);
+            color: var(--status-modified);
+        }
+
+        .event-status.deleted {
+            background: var(--status-deleted-bg);
+            color: var(--status-deleted);
+        }
+
+        .event-status .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .event-file {
+            font-weight: 500;
+        }
+
+        .event-ext {
+            font-size: 10px;
+            font-weight: 500;
+            padding: 2px 6px;
+            margin-left: 8px;
+            border-radius: 4px;
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-family: var(--font-mono);
+        }
+
+        .event-path {
+            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--text-tertiary);
+        }
+
+        .event-time {
+            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--text-tertiary);
+        }
+
+        .event-toggle {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-tertiary);
+            transition: transform 0.2s, color var(--transition-fast);
+        }
+
+        .event-toggle.open {
+            transform: rotate(180deg);
+            color: var(--accent-primary);
+        }
+
+        .event-toggle svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Preview */
+        .event-preview {
+            display: none;
+            background: var(--bg-primary);
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .event-preview.open {
+            display: block;
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-subtle);
+            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+        }
+
+        .preview-header span {
+            color: var(--text-tertiary);
+        }
+
+        .preview-body {
+            padding: 16px;
+            max-height: 400px;
+            overflow: auto;
+        }
+
+        .code-block {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        .code-line {
+            display: flex;
+            min-height: 20px;
+        }
+
+        .code-line:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .line-no {
+            width: 40px;
+            padding-right: 16px;
+            text-align: right;
+            color: var(--text-tertiary);
+            user-select: none;
+            flex-shrink: 0;
+            opacity: 0.5;
+        }
+
+        .line-code {
+            flex: 1;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text-secondary);
+        }
+
+        /* Syntax */
+        .hl-key {
+            color: #7dd3fc;
+        }
+
+        .hl-str {
+            color: #86efac;
+        }
+
+        .hl-num {
+            color: #fcd34d;
+        }
+
+        .hl-bool {
+            color: #f9a8d4;
+        }
+
+        .hl-kw {
+            color: #c4b5fd;
+        }
+
+        .hl-fn {
+            color: #67e8f9;
+        }
+
+        .hl-cls {
+            color: #fda4af;
+        }
+
+        .hl-dec {
+            color: #fcd34d;
+        }
+
+        .hl-cmt {
+            color: var(--text-tertiary);
+            font-style: italic;
+        }
+
+        .preview-loading {
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .loader {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--border-subtle);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .preview-error {
+            padding: 40px;
+            text-align: center;
+            color: var(--status-deleted);
+            font-size: 13px;
+        }
+
+        .preview-binary {
+            padding: 40px;
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 13px;
+        }
+
+        /* Empty */
+        .empty-state {
+            padding: 60px 20px;
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 13px;
+        }
+
+        /* New event animation */
+        .events-table tbody tr.new {
+            animation: rowPulse 0.5s ease-out;
+        }
+
+        @keyframes rowPulse {
+            0% {
+                background: rgba(139, 92, 246, 0.2);
+            }
+
+            100% {
+                background: transparent;
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-default);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-tertiary);
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="navbar-left">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                    </svg>
+                </div>
+                <span>FlowWatch</span>
+            </div>
+        </div>
+        <div class="navbar-right">
+            <div class="status-pill">
+                <div class="dot"></div>
+                <span>Monitoring</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main">
+        <div class="stats-row">
+            <div class="stat-box">
+                <div class="stat-label">Created</div>
+                <div class="stat-value green" id="stat-created">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Modified</div>
+                <div class="stat-value amber" id="stat-modified">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Deleted</div>
+                <div class="stat-value red" id="stat-deleted">0</div>
+            </div>
+        </div>
+
+        <div class="section-box" id="dirs-section">
+            <div class="section-header">
+                <span class="section-title">Watching</span>
+                <span class="section-count" id="dirs-count">0 directories</span>
+            </div>
+            <div class="dirs-grid" id="dirs-list"></div>
+        </div>
+
+        <div class="section-box" id="events-section">
+            <div class="section-header">
+                <span class="section-title">Recent Activity</span>
+                <span class="section-count" id="events-count">0 events</span>
+            </div>
+            <table class="events-table">
+                <thead>
+                    <tr>
+                        <th style="width: 110px;">Status</th>
+                        <th>File</th>
+                        <th>Path</th>
+                        <th style="width: 100px;">Time</th>
+                        <th style="width: 40px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="events-tbody">
+                    <tr>
+                        <td colspan="5" class="empty-state">Waiting for file changes...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        const state = {
+            stats: { added: 0, modified: 0, deleted: 0 },
+            events: [],
+            roots: [],
+            openPreviews: new Set(),
+            counter: 0
+        };
+
+        const icons = {
+            chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>',
+            folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>'
+        };
+
+        const typeClass = t => t === 'added' ? 'created' : t === 'modified' ? 'modified' : 'deleted';
+        const typeLabel = t => t === 'added' ? 'Created' : t === 'modified' ? 'Modified' : 'Deleted';
+        const genUid = e => { if (!e.uid) e.uid = `ev-${Date.now()}-${state.counter++}`; return e.uid; };
+        const getExt = f => { const p = f.split('.'); return p.length > 1 ? p.pop().toUpperCase() : ''; };
+        const esc = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+        const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+
+        function initAnimations() {
+            anime({
+                targets: '.stat-box',
+                opacity: [0, 1],
+                translateY: [10, 0],
+                delay: anime.stagger(80),
+                duration: 500,
+                easing: 'easeOutCubic'
+            });
+
+            anime({
+                targets: '.section-box',
+                opacity: [0, 1],
+                translateY: [15, 0],
+                delay: anime.stagger(100, { start: 200 }),
+                duration: 600,
+                easing: 'easeOutCubic'
+            });
+        }
+
+        function animateStat(el, newVal) {
+            const current = parseInt(el.textContent) || 0;
+            if (current === newVal) return;
+
+            anime({
+                targets: el,
+                innerHTML: [current, newVal],
+                round: 1,
+                duration: 400,
+                easing: 'easeOutQuad'
+            });
+        }
+
+        function updateStats() {
+            animateStat(document.getElementById('stat-created'), state.stats.added);
+            animateStat(document.getElementById('stat-modified'), state.stats.modified);
+            animateStat(document.getElementById('stat-deleted'), state.stats.deleted);
+        }
+
+        function renderDirs() {
+            const container = document.getElementById('dirs-list');
+            document.getElementById('dirs-count').textContent = `${state.roots.length} ${state.roots.length === 1 ? 'directory' : 'directories'}`;
+
+            if (!state.roots.length) {
+                container.innerHTML = '<div class="empty-state">No directories configured</div>';
+                return;
+            }
+
+            container.innerHTML = state.roots.map(r => {
+                const name = r.split('/').filter(Boolean).pop() || r;
+                return `<div class="dir-chip">
+                    <div class="dir-icon">${icons.folder}</div>
+                    <div>
+                        <div class="dir-name">${esc(name)}</div>
+                        <div class="dir-path">${esc(r)}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function renderEvents() {
+            const tbody = document.getElementById('events-tbody');
+            document.getElementById('events-count').textContent = `${state.events.length} events`;
+
+            if (!state.events.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Waiting for file changes...</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.events.map(e => {
+                const uid = genUid(e);
+                const file = e.path.split('/').pop();
+                const dir = e.path.split('/').slice(0, -1).join('/');
+                const tc = typeClass(e.change_type);
+                const ext = getExt(file);
+                const isOpen = state.openPreviews.has(uid);
+
+                return `<tr data-uid="${uid}" onclick="togglePreview('${uid}')">
+                    <td><span class="event-status ${tc}"><span class="dot"></span>${typeLabel(e.change_type)}</span></td>
+                    <td><span class="event-file">${esc(file)}</span>${ext ? `<span class="event-ext">${ext}</span>` : ''}</td>
+                    <td><span class="event-path">${esc(dir)}</span></td>
+                    <td><span class="event-time">${e.timestamp}</span></td>
+                    <td><div class="event-toggle ${isOpen ? 'open' : ''}">${icons.chevron}</div></td>
+                </tr>
+                <tr class="preview-row" style="display: ${isOpen ? 'table-row' : 'none'};">
+                    <td colspan="5" style="padding: 0;">
+                        <div class="event-preview ${isOpen ? 'open' : ''}" id="preview-${uid}"></div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function togglePreview(uid) {
+            const preview = document.getElementById(`preview-${uid}`);
+            const toggle = document.querySelector(`[data-uid="${uid}"] .event-toggle`);
+            const previewRow = preview.closest('tr');
+
+            if (state.openPreviews.has(uid)) {
+                state.openPreviews.delete(uid);
+                preview.classList.remove('open');
+                toggle.classList.remove('open');
+                previewRow.style.display = 'none';
+            } else {
+                state.openPreviews.add(uid);
+                preview.classList.add('open');
+                toggle.classList.add('open');
+                previewRow.style.display = 'table-row';
+
+                if (!preview.dataset.loaded) {
+                    const event = state.events.find(e => e.uid === uid);
+                    if (event) {
+                        await loadPreview(event.path, preview);
+                        preview.dataset.loaded = '1';
+                    }
+                }
+            }
+        }
+
+        async function loadPreview(path, container) {
+            container.innerHTML = '<div class="preview-loading"><div class="loader"></div></div>';
+
+            try {
+                const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+                if (!res.ok) throw new Error(await res.text());
+
+                const data = await res.json();
+                const file = path.split('/').pop();
+                const ext = file.split('.').pop().toLowerCase();
+
+                if (data.error) {
+                    container.innerHTML = `<div class="preview-error">${esc(data.error)}</div>`;
+                    return;
+                }
+
+                if (data.is_binary) {
+                    container.innerHTML = `<div class="preview-binary">Binary file · ${fmtSize(data.size)}</div>`;
+                    return;
+                }
+
+                let content = data.content;
+                const isJson = ext === 'json';
+                const isPython = ext === 'py';
+
+                if (isJson) {
+                    try { content = JSON.stringify(JSON.parse(content), null, 2); } catch { }
+                }
+
+                const lines = content.split('\n').slice(0, 300);
+                const truncated = data.truncated || content.split('\n').length > 300;
+                const highlight = l => isJson ? hlJson(l) : isPython ? hlPy(l) : esc(l);
+
+                container.innerHTML = `
+                    <div class="preview-header">
+                        ${esc(file)} <span>·</span> ${fmtSize(data.size)}${truncated ? ' <span>·</span> Truncated' : ''}
+                    </div>
+                    <div class="preview-body">
+                        <div class="code-block">${lines.map((l, i) =>
+                    `<div class="code-line"><span class="line-no">${i + 1}</span><span class="line-code">${highlight(l)}</span></div>`
+                ).join('')}</div>
+                    </div>`;
+            } catch (err) {
+                container.innerHTML = `<div class="preview-error">${esc(err.message)}</div>`;
+            }
+        }
+
+        function hlJson(l) {
+            return esc(l)
+                .replace(/"([^"]+)":/g, '<span class="hl-key">"$1"</span>:')
+                .replace(/: "([^"]*)"/g, ': <span class="hl-str">"$1"</span>')
+                .replace(/: (-?\d+\.?\d*)/g, ': <span class="hl-num">$1</span>')
+                .replace(/: (true|false)/g, ': <span class="hl-bool">$1</span>')
+                .replace(/: (null)/g, ': <span class="hl-bool">$1</span>');
+        }
+
+        function hlPy(l) {
+            let r = esc(l);
+            r = r.replace(/(#.*)$/g, '<span class="hl-cmt">$1</span>');
+            r = r.replace(/(@\w+)/g, '<span class="hl-dec">$1</span>');
+            r = r.replace(/("""[\s\S]*?"""|'''[\s\S]*?'''|"[^"]*"|'[^']*')/g, '<span class="hl-str">$1</span>');
+            r = r.replace(/\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|yield|lambda|pass|break|continue|raise|in|is|not|and|or|None|True|False|async|await|self)\b/g, '<span class="hl-kw">$1</span>');
+            r = r.replace(/\bdef\b\s+(\w+)/g, '<span class="hl-kw">def</span> <span class="hl-fn">$1</span>');
+            r = r.replace(/\bclass\b\s+(\w+)/g, '<span class="hl-kw">class</span> <span class="hl-cls">$1</span>');
+            r = r.replace(/\b(\d+\.?\d*)\b/g, '<span class="hl-num">$1</span>');
+            return r;
+        }
+
+        function addEvent(event) {
+            genUid(event);
+            state.events.unshift(event);
+            if (state.events.length > 100) state.events.pop();
+            state.stats[event.change_type]++;
+            updateStats();
+            renderEvents();
+
+            const newRow = document.querySelector(`[data-uid="${event.uid}"]`);
+            if (newRow) {
+                newRow.classList.add('new');
+                setTimeout(() => newRow.classList.remove('new'), 500);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initAnimations();
+
+            fetch('/api/state')
+                .then(r => r.json())
+                .then(data => {
+                    state.stats = data.stats;
+                    state.roots = data.roots;
+                    data.events.forEach(e => genUid(e));
+                    state.events = data.events;
+                    updateStats();
+                    renderDirs();
+                    renderEvents();
+                });
+
+            const sse = new EventSource('/api/events');
+            sse.onmessage = e => {
+                const data = JSON.parse(e.data);
+                if (data.type === 'event') addEvent(data.event);
+            };
+        });
+    </script>
+</body>
+
+</html>

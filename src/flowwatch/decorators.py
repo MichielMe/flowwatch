@@ -1,8 +1,8 @@
 # src/flowwatch/decorators.py
 from __future__ import annotations
 
+from collections.abc import Callable
 from threading import Event
-from typing import Callable, Optional
 
 from rich import box
 from rich.console import Console
@@ -16,7 +16,7 @@ from .app import FileEvent, FlowWatchApp
 default_app = FlowWatchApp(name="flowwatch-default")
 
 
-def _ensure_app(app: Optional[FlowWatchApp]) -> FlowWatchApp:
+def _ensure_app(app: FlowWatchApp | None) -> FlowWatchApp:
     return app or default_app
 
 
@@ -127,7 +127,7 @@ def on_any(
     return decorator
 
 
-def run(*, stop_event: Optional[Event] = None, pretty: bool = True) -> None:
+def run(*, stop_event: Event | None = None, pretty: bool = True) -> None:
     """
     Run the default FlowWatch app (used with the decorator API).
 

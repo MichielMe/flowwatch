@@ -160,6 +160,7 @@ def create_event_hook(
             "events": ", ".join(e.name for e in h.events),
             "pattern": h.pattern or "*",
             "priority": str(h.priority),
+            "is_async": str(h.is_async),
         }
         for h in app.handlers
     ]
@@ -192,7 +193,7 @@ def _create_dashboard_app(state: DashboardState | None = None) -> Starlette:
     if not DASHBOARD_AVAILABLE:
         msg = (
             "Dashboard dependencies not installed. "
-            "Install with: pip install flowwatch[dashboard]"
+            "Install with: uv add flowwatch --extra dashboard"
         )
         raise ImportError(msg)
 
@@ -343,11 +344,10 @@ def _create_dashboard_app(state: DashboardState | None = None) -> Starlette:
 
     routes = [
         Route("/", homepage),
-        Route("/api/state", api_state),
-        Route("/api/events", api_events),
-        Route("/api/health", api_health),
-        Route("/health", api_health),  # Alias for k8s probes
-        Route("/api/file", api_file),
+        Route("/state", api_state),
+        Route("/events", api_events),
+        Route("/health", api_health),
+        Route("/file", api_file),
     ]
 
     return Starlette(routes=routes)
@@ -405,7 +405,7 @@ class DashboardServer:
         if not DASHBOARD_AVAILABLE:
             msg = (
                 "Dashboard dependencies not installed. "
-                "Install with: pip install flowwatch[dashboard]"
+                "Install with: uv add flowwatch --extra dashboard"
             )
             raise ImportError(msg)
 

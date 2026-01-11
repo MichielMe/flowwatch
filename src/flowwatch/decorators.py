@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from threading import Event
+from typing import TypeVar
 
 from rich import box
 from rich.console import Console
@@ -10,7 +11,10 @@ from rich.panel import Panel
 from rich.table import Table
 from watchfiles import Change
 
-from .app import FileEvent, FlowWatchApp
+from .app import FlowWatchApp, Handler
+
+# TypeVar for preserving handler type through decorators
+H = TypeVar("H", bound=Handler)
 
 # Global default app for decorator-based API
 default_app = FlowWatchApp(name="flowwatch-default")
@@ -27,13 +31,23 @@ def on_created(
     process_existing: bool = False,
     priority: int = 0,
     app: FlowWatchApp | None = None,
-) -> Callable[[Callable[[FileEvent], None]], Callable[[FileEvent], None]]:
+) -> Callable[[H], H]:
     """
     Decorate a function to run when a file is created (Change.added)
     under the given root (and optional pattern).
+
+    Supports both sync and async handlers:
+
+        @on_created("./inbox", pattern="*.txt")
+        def sync_handler(event: FileEvent) -> None:
+            print(f"New file: {event.path}")
+
+        @on_created("./inbox", pattern="*.json")
+        async def async_handler(event: FileEvent) -> None:
+            await process_file_async(event.path)
     """
 
-    def decorator(func: Callable[[FileEvent], None]) -> Callable[[FileEvent], None]:
+    def decorator(func: H) -> H:
         _app = _ensure_app(app)
         _app.add_handler(
             func,
@@ -54,12 +68,14 @@ def on_modified(
     pattern: str | None = None,
     priority: int = 0,
     app: FlowWatchApp | None = None,
-) -> Callable[[Callable[[FileEvent], None]], Callable[[FileEvent], None]]:
+) -> Callable[[H], H]:
     """
     Decorate a function to run when a file is modified (Change.modified).
+
+    Supports both sync and async handlers.
     """
 
-    def decorator(func: Callable[[FileEvent], None]) -> Callable[[FileEvent], None]:
+    def decorator(func: H) -> H:
         _app = _ensure_app(app)
         _app.add_handler(
             func,
@@ -80,12 +96,14 @@ def on_deleted(
     pattern: str | None = None,
     priority: int = 0,
     app: FlowWatchApp | None = None,
-) -> Callable[[Callable[[FileEvent], None]], Callable[[FileEvent], None]]:
+) -> Callable[[H], H]:
     """
     Decorate a function to run when a file is deleted (Change.deleted).
+
+    Supports both sync and async handlers.
     """
 
-    def decorator(func: Callable[[FileEvent], None]) -> Callable[[FileEvent], None]:
+    def decorator(func: H) -> H:
         _app = _ensure_app(app)
         _app.add_handler(
             func,
@@ -107,12 +125,14 @@ def on_any(
     process_existing: bool = False,
     priority: int = 0,
     app: FlowWatchApp | None = None,
-) -> Callable[[Callable[[FileEvent], None]], Callable[[FileEvent], None]]:
+) -> Callable[[H], H]:
     """
     Decorate a function to run on any change (created/modified/deleted).
+
+    Supports both sync and async handlers.
     """
 
-    def decorator(func: Callable[[FileEvent], None]) -> Callable[[FileEvent], None]:
+    def decorator(func: H) -> H:
         _app = _ensure_app(app)
         _app.add_handler(
             func,

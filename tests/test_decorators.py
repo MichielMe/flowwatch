@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
@@ -235,3 +236,105 @@ class TestRunFunction:
 
             mock_run.assert_called_once()
 
+
+class TestAsyncDecorators:
+    """Tests for async handler support in decorators."""
+
+    def test_on_created_with_async_handler(self, temp_dir: Path) -> None:
+        """@on_created should work with async handlers."""
+        app = FlowWatchApp(name="test-async")
+
+        @on_created(str(temp_dir), app=app)
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        assert len(app.handlers) == 1
+        h = app.handlers[0]
+        assert h.is_async is True
+        assert h.func is async_handler
+
+    def test_on_modified_with_async_handler(self, temp_dir: Path) -> None:
+        """@on_modified should work with async handlers."""
+        app = FlowWatchApp(name="test-async")
+
+        @on_modified(str(temp_dir), app=app)
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        assert len(app.handlers) == 1
+        assert app.handlers[0].is_async is True
+
+    def test_on_deleted_with_async_handler(self, temp_dir: Path) -> None:
+        """@on_deleted should work with async handlers."""
+        app = FlowWatchApp(name="test-async")
+
+        @on_deleted(str(temp_dir), app=app)
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        assert len(app.handlers) == 1
+        assert app.handlers[0].is_async is True
+
+    def test_on_any_with_async_handler(self, temp_dir: Path) -> None:
+        """@on_any should work with async handlers."""
+        app = FlowWatchApp(name="test-async")
+
+        @on_any(str(temp_dir), app=app)
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        assert len(app.handlers) == 1
+        assert app.handlers[0].is_async is True
+        assert app.handlers[0].events == frozenset(
+            [Change.added, Change.modified, Change.deleted]
+        )
+
+    def test_async_decorator_returns_original_function(self, temp_dir: Path) -> None:
+        """Async decorator should return the original async function unchanged."""
+        app = FlowWatchApp(name="test-async")
+
+        async def original_async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        decorated = on_created(str(temp_dir), app=app)(original_async_handler)
+        assert decorated is original_async_handler
+
+    def test_async_decorator_with_all_options(self, temp_dir: Path) -> None:
+        """Async decorator should accept all options."""
+        app = FlowWatchApp(name="test-async")
+
+        @on_created(
+            str(temp_dir),
+            pattern="*.json",
+            process_existing=True,
+            priority=10,
+            app=app,
+        )
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        h = app.handlers[0]
+        assert h.is_async is True
+        assert h.pattern == "*.json"
+        assert h.process_existing is True
+        assert h.priority == 10
+
+    def test_mixed_sync_async_decorators(self, temp_dir: Path) -> None:
+        """Mix of sync and async handlers should work together."""
+        app = FlowWatchApp(name="test-mixed")
+
+        @on_created(str(temp_dir), pattern="*.txt", app=app)
+        def sync_handler(event: FileEvent) -> None:
+            pass
+
+        @on_created(str(temp_dir), pattern="*.json", app=app)
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        assert len(app.handlers) == 2
+
+        sync_h = next(h for h in app.handlers if h.pattern == "*.txt")
+        async_h = next(h for h in app.handlers if h.pattern == "*.json")
+
+        assert sync_h.is_async is False
+        assert async_h.is_async is True

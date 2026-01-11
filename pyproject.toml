@@ -25,6 +25,8 @@ classifiers = [
 
 [project.optional-dependencies]
 dashboard = ["starlette>=0.40.0", "uvicorn>=0.30.0"]
+fastapi = ["fastapi[standard]>=0.115.0"]
+all = ["fastapi[standard]>=0.115.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
@@ -95,6 +97,7 @@ ignore = [
     "PLC0415",
     "F841",
 ] # Allow magic numbers, unused args, local imports, unused vars in tests
+"examples/*" = ["S603", "S607"] # Allow subprocess calls in examples
 "src/flowwatch/dashboard.py" = [
     "E501",
     "PLC0415",
@@ -102,6 +105,11 @@ ignore = [
 ] # Allow long lines (HTML/CSS), local imports (lazy loading), many returns
 "src/flowwatch/__init__.py" = ["PLC0415"] # Allow local imports for lazy loading
 "src/flowwatch/cli.py" = ["PLC0415"] # Allow local imports for lazy loading
+"src/flowwatch/fastapi_integration.py" = [
+    "PLC0415",
+    "PLR0911",
+    "PLR0915",
+] # Allow local imports, many returns, many statements
 
 [tool.mypy]
 python_version = "3.11"

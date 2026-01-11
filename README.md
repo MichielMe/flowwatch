@@ -2,7 +2,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-105%20passed-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-123%20passed-brightgreen.svg)](#)
 [![Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen.svg)](#)
 
 FlowWatch is a tiny ergonomic layer on top of [`watchfiles`](https://pypi.org/project/watchfiles/)
@@ -32,26 +32,28 @@ FlowWatch takes care of:
 
 FlowWatch is published as a normal Python package.
 
-Using **uv**:
-
 ```bash
+# Using uv (recommended)
 uv add flowwatch
-```
 
-Using **pip**:
-
-```bash
+# Or with pip
 pip install flowwatch
 ```
 
-### Optional: Web Dashboard
-
-To use the real-time web dashboard, install with the `dashboard` extra:
+### Optional Extras
 
 ```bash
+# Standalone dashboard (Starlette + uvicorn)
+uv add flowwatch --extra dashboard
 pip install flowwatch[dashboard]
-# or
-uv add flowwatch[dashboard]
+
+# FastAPI integration (mount in your FastAPI app)
+uv add flowwatch --extra fastapi
+pip install flowwatch[fastapi]
+
+# All features
+uv add flowwatch --extra all
+pip install flowwatch[all]
 ```
 
 ---
@@ -76,6 +78,12 @@ if __name__ == "__main__":
 ```
 
 Drop `*.txt` files into `inbox/` and watch the handler fire.
+
+See the [`examples/`](examples/) directory for more complete examples:
+- `basic.py` - Simple sync handlers
+- `async_handlers.py` - Mixed sync and async handlers
+- `dashboard.py` - Standalone web dashboard
+- `fastapi_integration.py` - Mount dashboard in FastAPI apps
 
 ---
 
@@ -112,11 +120,45 @@ Register handlers using decorators from `flowwatch`:
 Behind the scenes these attach to a global `FlowWatchApp` instance, which you can run
 using `flowwatch.run()` or via the CLI.
 
+### 3. Async Handler Support
+
+FlowWatch natively supports both **sync and async handlers**. Async handlers are 
+automatically detected and executed in a dedicated event loop thread:
+
+```python
+import aiohttp
+from flowwatch import FileEvent, on_created, run
+
+WATCH_DIR = "./inbox"
+
+# Sync handler - runs in thread pool
+@on_created(WATCH_DIR, pattern="*.txt")
+def handle_sync(event: FileEvent) -> None:
+    print(f"Sync: {event.path}")
+
+# Async handler - runs in async event loop
+@on_created(WATCH_DIR, pattern="*.json")
+async def handle_async(event: FileEvent) -> None:
+    async with aiohttp.ClientSession() as session:
+        await session.post("https://api.example.com/webhook", json={
+            "file": str(event.path),
+            "event": event.change.name,
+        })
+
+if __name__ == "__main__":
+    run()
+```
+
+Async handlers are ideal for:
+- HTTP/API calls (using `aiohttp`, `httpx`)
+- Database operations (using `asyncpg`, `motor`)
+- Any I/O-bound work that benefits from `async/await`
+
 ---
 
 ## Web Dashboard
 
-> **Note:** The dashboard requires optional dependencies. Install with `pip install flowwatch[dashboard]`
+> **Note:** The dashboard requires optional dependencies. Install with `uv add flowwatch --extra dashboard`
 
 FlowWatch includes a real-time web dashboard for monitoring file events.
 
@@ -168,6 +210,43 @@ curl http://localhost:8765/health
   "events_processed": 42
 }
 ```
+
+### FastAPI Integration
+
+Mount the FlowWatch dashboard in your existing FastAPI application:
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from flowwatch import FlowWatchApp, create_dashboard_routes, on_created
+
+flowwatch = FlowWatchApp()
+
+@on_created("./watch_dir", pattern="*.txt", app=flowwatch)
+def handle_file(event):
+    print(f"New file: {event.path}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    flowwatch.start()  # Start watching in background
+    yield
+    flowwatch.stop()   # Graceful shutdown
+
+app = FastAPI(lifespan=lifespan)
+
+# Mount dashboard at /flowwatch/
+app.include_router(
+    create_dashboard_routes(flowwatch),
+    prefix="/flowwatch",
+)
+```
+
+Run with:
+```bash
+uv run fastapi run your_app.py
+```
+
+Dashboard available at `http://localhost:8000/flowwatch/`
 
 ---
 
@@ -314,11 +393,12 @@ All decorators accept:
 
 ### Functions
 
-| Function               | Description                          |
-| ---------------------- | ------------------------------------ |
-| `run()`                | Start the default FlowWatchApp       |
-| `run_with_dashboard()` | Start with web dashboard             |
-| `stop_dashboard()`     | Gracefully stop the dashboard server |
+| Function                   | Description                              |
+| -------------------------- | ---------------------------------------- |
+| `run()`                    | Start the default FlowWatchApp           |
+| `run_with_dashboard()`     | Start with standalone web dashboard      |
+| `stop_dashboard()`         | Stop the standalone dashboard server     |
+| `create_dashboard_routes()`| Create FastAPI router for dashboard      |
 
 ### Classes
 
@@ -327,6 +407,26 @@ All decorators accept:
 | `FlowWatchApp`  | Main application for custom configurations   |
 | `FileEvent`     | Event object passed to handlers              |
 | `JsonFormatter` | Logging formatter for structured JSON output |
+
+#### FlowWatchApp Methods
+
+| Method          | Description                                      |
+| --------------- | ------------------------------------------------ |
+| `add_handler()` | Register a handler function                      |
+| `run()`         | Start watching (blocking)                        |
+| `start()`       | Start watching in background thread (non-blocking) |
+| `stop()`        | Stop background watcher gracefully               |
+| `is_running`    | Property: check if watcher is running            |
+
+### Type Aliases
+
+For type-annotating your handlers:
+
+| Alias          | Description                                       |
+| -------------- | ------------------------------------------------- |
+| `SyncHandler`  | `Callable[[FileEvent], None]`                     |
+| `AsyncHandler` | `Callable[[FileEvent], Coroutine[Any, Any, None]]`|
+| `Handler`      | `SyncHandler | AsyncHandler`                      |
 
 ---
 

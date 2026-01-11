@@ -115,18 +115,10 @@ class TestDashboardState:
         state = DashboardState()
 
         # Add various event types
-        state.add_event(
-            EventRecord("1", "added", "/f1.txt", "h", None)
-        )
-        state.add_event(
-            EventRecord("2", "modified", "/f2.txt", "h", None)
-        )
-        state.add_event(
-            EventRecord("3", "deleted", "/f3.txt", "h", None)
-        )
-        state.add_event(
-            EventRecord("4", "added", "/f4.txt", "h", None)
-        )
+        state.add_event(EventRecord("1", "added", "/f1.txt", "h", None))
+        state.add_event(EventRecord("2", "modified", "/f2.txt", "h", None))
+        state.add_event(EventRecord("3", "deleted", "/f3.txt", "h", None))
+        state.add_event(EventRecord("4", "added", "/f4.txt", "h", None))
 
         assert state.stats["added"] == 2
         assert state.stats["modified"] == 1
@@ -137,9 +129,7 @@ class TestDashboardState:
         state = DashboardState()
         # Add more than maxlen (100) events
         for i in range(110):
-            state.add_event(
-                EventRecord(str(i), "added", f"/file{i}.txt", "h", None)
-            )
+            state.add_event(EventRecord(str(i), "added", f"/file{i}.txt", "h", None))
 
         assert len(state.events) == 100
         # Most recent should be first (appendleft)
@@ -273,7 +263,7 @@ class TestDashboardApp:
         assert "FlowWatch" in response.text
 
     def test_api_state_returns_json(self, dashboard_client: TestClient) -> None:
-        response = dashboard_client.get("/api/state")
+        response = dashboard_client.get("/state")
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/json"
 
@@ -291,7 +281,7 @@ class TestDashboardApp:
             EventRecord("12:00:00", "added", "/test.txt", "handler", "*.txt")
         )
 
-        response = dashboard_client.get("/api/state")
+        response = dashboard_client.get("/state")
         data = response.json()
 
         assert data["stats"]["added"] == 1
@@ -313,33 +303,33 @@ class TestHealthEndpoint:
             yield client
 
     def test_health_endpoint_returns_200(self, health_client: TestClient) -> None:
-        response = health_client.get("/api/health")
+        response = health_client.get("/health")
         assert response.status_code == 200
 
     def test_health_endpoint_returns_json(self, health_client: TestClient) -> None:
-        response = health_client.get("/api/health")
+        response = health_client.get("/health")
         assert response.headers["content-type"] == "application/json"
 
     def test_health_endpoint_contains_status(self, health_client: TestClient) -> None:
-        response = health_client.get("/api/health")
+        response = health_client.get("/health")
         data = response.json()
         assert data["status"] == "healthy"
 
     def test_health_endpoint_contains_uptime(self, health_client: TestClient) -> None:
-        response = health_client.get("/api/health")
+        response = health_client.get("/health")
         data = response.json()
         assert "uptime_seconds" in data
         assert data["uptime_seconds"] >= 0
 
     def test_health_endpoint_contains_counts(self, health_client: TestClient) -> None:
-        response = health_client.get("/api/health")
+        response = health_client.get("/health")
         data = response.json()
         assert "handlers_count" in data
         assert "roots_count" in data
         assert "events_processed" in data
 
     def test_health_alias_endpoint(self, health_client: TestClient) -> None:
-        """Test /health alias for k8s probes."""
+        """Test /health works for k8s probes."""
         response = health_client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
@@ -362,7 +352,7 @@ class TestApiFileEndpoint:
             yield client
 
     def test_file_no_path_returns_400(self, client_with_root: TestClient) -> None:
-        response = client_with_root.get("/api/file")
+        response = client_with_root.get("/file")
         assert response.status_code == 400
         assert "No path provided" in response.json()["error"]
 
@@ -370,15 +360,13 @@ class TestApiFileEndpoint:
         self, client_with_root: TestClient, temp_dir: Path
     ) -> None:
         nonexistent = temp_dir / "nonexistent.txt"
-        response = client_with_root.get(f"/api/file?path={nonexistent}")
+        response = client_with_root.get(f"/file?path={nonexistent}")
         assert response.status_code == 404
         assert "File not found" in response.json()["error"]
 
-    def test_file_outside_root_returns_403(
-        self, client_with_root: TestClient
-    ) -> None:
+    def test_file_outside_root_returns_403(self, client_with_root: TestClient) -> None:
         # Try to access /etc/passwd (path traversal attempt)
-        response = client_with_root.get("/api/file?path=/etc/passwd")
+        response = client_with_root.get("/file?path=/etc/passwd")
         assert response.status_code == 403
         assert "Access denied" in response.json()["error"]
 
@@ -387,7 +375,7 @@ class TestApiFileEndpoint:
     ) -> None:
         # Try path traversal with ../
         traversal_path = str(temp_dir / ".." / ".." / "etc" / "passwd")
-        response = client_with_root.get(f"/api/file?path={traversal_path}")
+        response = client_with_root.get(f"/file?path={traversal_path}")
         assert response.status_code in (403, 404)  # Either blocked or not found
 
     def test_file_returns_content(
@@ -397,7 +385,7 @@ class TestApiFileEndpoint:
         test_file = temp_dir / "test.txt"
         test_file.write_text("Hello, World!")
 
-        response = client_with_root.get(f"/api/file?path={test_file}")
+        response = client_with_root.get(f"/file?path={test_file}")
         assert response.status_code == 200
 
         data = response.json()
@@ -411,7 +399,7 @@ class TestApiFileEndpoint:
         test_file = temp_dir / "test.txt"
         test_file.write_text("Test content")
 
-        response = client_with_root.get(f"/api/file?path={test_file}")
+        response = client_with_root.get(f"/file?path={test_file}")
         data = response.json()
 
         assert "size" in data
@@ -425,7 +413,7 @@ class TestApiFileEndpoint:
         binary_file = temp_dir / "test.bin"
         binary_file.write_bytes(b"\x00\x01\x02\x03binary data")
 
-        response = client_with_root.get(f"/api/file?path={binary_file}")
+        response = client_with_root.get(f"/file?path={binary_file}")
         data = response.json()
 
         assert data["is_binary"] is True
@@ -437,7 +425,7 @@ class TestApiFileEndpoint:
         subdir = temp_dir / "subdir"
         subdir.mkdir()
 
-        response = client_with_root.get(f"/api/file?path={subdir}")
+        response = client_with_root.get(f"/file?path={subdir}")
         assert response.status_code == 400
         assert "Not a file" in response.json()["error"]
 
@@ -449,7 +437,7 @@ class TestApiFileEndpoint:
         test_file = subdir / "nested.txt"
         test_file.write_text("Nested content")
 
-        response = client_with_root.get(f"/api/file?path={test_file}")
+        response = client_with_root.get(f"/file?path={test_file}")
         assert response.status_code == 200
         assert response.json()["content"] == "Nested content"
 
@@ -495,6 +483,7 @@ class TestRunDashboard:
 
             # Give the thread time to start
             import time
+
             time.sleep(0.1)
 
             # Config and Server should have been created
@@ -558,6 +547,7 @@ class TestDashboardServer:
             server.start(app, open_browser=False)
 
             import time
+
             time.sleep(0.1)
 
             # Server should be "running" (thread started)
@@ -588,6 +578,7 @@ class TestDashboardServer:
             server.start(app, open_browser=False)
 
             import time
+
             time.sleep(0.1)
 
             # Simulate that the thread is running

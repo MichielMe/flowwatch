@@ -3,7 +3,14 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .app import FileEvent, FlowWatchApp, JsonFormatter
+from .app import (
+    AsyncHandler,
+    FileEvent,
+    FlowWatchApp,
+    Handler,
+    JsonFormatter,
+    SyncHandler,
+)
 from .decorators import default_app, on_any, on_created, on_deleted, on_modified, run
 
 try:
@@ -59,11 +66,60 @@ def stop_dashboard(timeout: float = 5.0) -> None:
     _stop_dashboard(timeout=timeout)
 
 
+def create_dashboard_routes(
+    app: FlowWatchApp,
+    *,
+    prefix: str = "",
+) -> object:  # Returns fastapi.APIRouter, but kept as object to avoid import
+    """
+    Create a FastAPI router with FlowWatch dashboard routes.
+
+    This allows you to mount the FlowWatch dashboard in your existing
+    FastAPI application at any prefix you choose.
+
+    Parameters
+    ----------
+    app:
+        The FlowWatchApp instance to monitor.
+    prefix:
+        URL prefix for all routes (e.g., "/flowwatch").
+        Leave empty if you're using include_router with a prefix.
+
+    Returns
+    -------
+    APIRouter:
+        A FastAPI router with all dashboard routes.
+
+    Example
+    -------
+    ```python
+    from fastapi import FastAPI
+    from flowwatch import FlowWatchApp, create_dashboard_routes
+
+    fastapi_app = FastAPI()
+    flowwatch_app = FlowWatchApp()
+
+    # Mount dashboard at /flowwatch/
+    fastapi_app.include_router(
+        create_dashboard_routes(flowwatch_app),
+        prefix="/flowwatch",
+    )
+    ```
+    """
+    from .fastapi_integration import create_dashboard_routes as _create_routes
+
+    return _create_routes(app, prefix=prefix)
+
+
 __all__ = [
+    "AsyncHandler",
     "FileEvent",
     "FlowWatchApp",
+    "Handler",
     "JsonFormatter",
+    "SyncHandler",
     "__version__",
+    "create_dashboard_routes",
     "default_app",
     "on_any",
     "on_created",

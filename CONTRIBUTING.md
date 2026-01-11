@@ -204,12 +204,13 @@ Use conventional commit prefixes:
 ```
 flowwatch/
 ├── src/flowwatch/
-│   ├── __init__.py      # Package exports
-│   ├── app.py           # Core FlowWatchApp and FileEvent
-│   ├── cli.py           # Typer CLI
-│   ├── dashboard.py     # Web dashboard (optional)
-│   ├── decorators.py    # @on_created, @on_modified, etc.
-│   └── static/          # Dashboard HTML/CSS
+│   ├── __init__.py           # Package exports
+│   ├── app.py                # Core FlowWatchApp and FileEvent
+│   ├── cli.py                # Typer CLI
+│   ├── dashboard.py          # Standalone web dashboard (optional)
+│   ├── fastapi_integration.py # FastAPI router integration (optional)
+│   ├── decorators.py         # @on_created, @on_modified, etc.
+│   └── static/               # Dashboard HTML/CSS
 ├── tests/
 │   ├── conftest.py      # Shared fixtures
 │   ├── test_app.py

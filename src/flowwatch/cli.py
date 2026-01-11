@@ -46,7 +46,7 @@ def run(
         ...,
         help=(
             "Python module or .py file to import that registers FlowWatch handlers.\n"
-            "Examples: 'example_usage' or 'examples/example_usage.py'"
+            "Examples: 'myproject.watchers' or 'examples/basic.py'"
         ),
     ),
     debounce: float = typer.Option(
@@ -149,7 +149,7 @@ def run(
         except ImportError:
             console.print(
                 "[yellow]Dashboard dependencies not installed.[/]\n"
-                "Install with: [cyan]pip install flowwatch[dashboard][/]"
+                "Install with: [cyan]uv add flowwatch --extra dashboard[/]"
             )
             raise typer.Exit(1) from None
     else:

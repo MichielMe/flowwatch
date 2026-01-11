@@ -786,7 +786,7 @@
             container.innerHTML = '<div class="preview-loading"><div class="loader"></div></div>';
 
             try {
-                const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+                const res = await fetch(`file?path=${encodeURIComponent(path)}`);
                 if (!res.ok) throw new Error(await res.text());
 
                 const data = await res.json();
@@ -868,7 +868,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             initAnimations();
 
-            fetch('/api/state')
+            fetch('state')
                 .then(r => r.json())
                 .then(data => {
                     state.stats = data.stats;
@@ -880,7 +880,7 @@
                     renderEvents();
                 });
 
-            const sse = new EventSource('/api/events');
+            const sse = new EventSource('events');
             sse.onmessage = e => {
                 const data = JSON.parse(e.data);
                 if (data.type === 'event') addEvent(data.event);

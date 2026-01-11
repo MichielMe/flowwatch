@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -592,4 +593,314 @@ class TestJsonFormatter:
         timestamp = data["timestamp"]
         # Should parse without error
         datetime.fromisoformat(timestamp)
+
+
+class TestAsyncHandlerDetection:
+    """Tests for async handler detection."""
+
+    def test_sync_handler_detected_correctly(
+        self, watch_app: FlowWatchApp, temp_dir: Path
+    ) -> None:
+        """Sync handlers should have is_async=False."""
+
+        def sync_handler(event: FileEvent) -> None:
+            pass
+
+        watch_app.add_handler(sync_handler, root=temp_dir, events=[Change.added])
+
+        assert len(watch_app.handlers) == 1
+        assert watch_app.handlers[0].is_async is False
+
+    def test_async_handler_detected_correctly(
+        self, watch_app: FlowWatchApp, temp_dir: Path
+    ) -> None:
+        """Async handlers should have is_async=True."""
+
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        watch_app.add_handler(async_handler, root=temp_dir, events=[Change.added])
+
+        assert len(watch_app.handlers) == 1
+        assert watch_app.handlers[0].is_async is True
+
+    def test_mixed_handlers_detected_correctly(
+        self, watch_app: FlowWatchApp, temp_dir: Path
+    ) -> None:
+        """Mix of sync and async handlers should be detected correctly."""
+
+        def sync_handler(event: FileEvent) -> None:
+            pass
+
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        watch_app.add_handler(sync_handler, root=temp_dir, events=[Change.added])
+        watch_app.add_handler(async_handler, root=temp_dir, events=[Change.modified])
+
+        handlers = watch_app.handlers
+        assert len(handlers) == 2
+
+        # Find handlers by their is_async flag
+        sync_h = next(h for h in handlers if not h.is_async)
+        async_h = next(h for h in handlers if h.is_async)
+
+        assert sync_h.func is sync_handler
+        assert async_h.func is async_handler
+
+
+class TestAsyncLoopManagement:
+    """Tests for the async event loop lifecycle."""
+
+    def test_has_async_handlers_false_for_sync_only(
+        self, watch_app: FlowWatchApp, temp_dir: Path
+    ) -> None:
+        """_has_async_handlers should return False when only sync handlers exist."""
+
+        def sync_handler(event: FileEvent) -> None:
+            pass
+
+        watch_app.add_handler(sync_handler, root=temp_dir, events=[Change.added])
+        assert watch_app._has_async_handlers() is False
+
+    def test_has_async_handlers_true_for_async(
+        self, watch_app: FlowWatchApp, temp_dir: Path
+    ) -> None:
+        """_has_async_handlers should return True when async handlers exist."""
+
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        watch_app.add_handler(async_handler, root=temp_dir, events=[Change.added])
+        assert watch_app._has_async_handlers() is True
+
+    def test_async_loop_starts_for_async_handlers(self, temp_dir: Path) -> None:
+        """Async event loop should start when async handlers are registered."""
+        app = FlowWatchApp(debounce=0.1)
+
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0)
+
+        app.add_handler(async_handler, root=temp_dir, events=[Change.added])
+
+        stop_event = Event()
+
+        def stop_soon() -> None:
+            time.sleep(0.2)
+            stop_event.set()
+
+        thread = Thread(target=stop_soon)
+        thread.start()
+
+        app.run(stop_event=stop_event)
+        thread.join()
+
+        # Loop should be stopped after run() completes
+        assert app._async_loop is None
+        assert app._async_thread is None
+
+    def test_no_async_loop_for_sync_only_handlers(self, temp_dir: Path) -> None:
+        """Async event loop should not start for sync-only handlers."""
+        app = FlowWatchApp(debounce=0.1)
+        loop_was_none = [True]
+
+        def sync_handler(event: FileEvent) -> None:
+            # Check loop state during handler execution
+            loop_was_none[0] = app._async_loop is None
+
+        app.add_handler(
+            sync_handler,
+            root=temp_dir,
+            events=[Change.added],
+            process_existing=True,
+        )
+
+        # Create a file to trigger the handler
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("content")
+
+        stop_event = Event()
+
+        def stop_soon() -> None:
+            time.sleep(0.3)
+            stop_event.set()
+
+        thread = Thread(target=stop_soon)
+        thread.start()
+
+        app.run(stop_event=stop_event)
+        thread.join()
+
+        assert loop_was_none[0] is True
+
+
+class TestAsyncHandlerExecution:
+    """Tests for async handler execution."""
+
+    def test_async_handler_receives_events(self, temp_dir: Path) -> None:
+        """Async handler should receive file events."""
+        received_events: list[FileEvent] = []
+        handler_completed = Event()
+
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0.01)  # Simulate async work
+            received_events.append(event)
+            handler_completed.set()
+
+        app = FlowWatchApp(debounce=0.1)
+        app.add_handler(
+            async_handler, root=temp_dir, events=[Change.added], pattern="*.txt"
+        )
+
+        stop_event = Event()
+
+        def create_file_and_stop() -> None:
+            time.sleep(0.2)
+            test_file = temp_dir / "new_file.txt"
+            test_file.write_text("hello")
+            # Wait for handler to complete or timeout
+            handler_completed.wait(timeout=2.0)
+            time.sleep(0.1)
+            stop_event.set()
+
+        thread = Thread(target=create_file_and_stop)
+        thread.start()
+
+        app.run(stop_event=stop_event)
+        thread.join()
+
+        assert len(received_events) >= 1
+        event = received_events[0]
+        assert event.change == Change.added
+        assert event.path.name == "new_file.txt"
+
+    def test_async_handler_exception_is_logged_not_raised(
+        self, temp_dir: Path
+    ) -> None:
+        """Async handler exceptions should be caught and logged."""
+        call_count = [0]
+
+        async def bad_async_handler(event: FileEvent) -> None:
+            call_count[0] += 1
+            raise ValueError("Async handler failed!")
+
+        app = FlowWatchApp(debounce=0.1)
+        app.add_handler(
+            bad_async_handler,
+            root=temp_dir,
+            events=[Change.added],
+            pattern="*.txt",
+            process_existing=True,
+        )
+
+        # Create file before starting
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("content")
+
+        stop_event = Event()
+
+        def stop_soon() -> None:
+            time.sleep(0.3)
+            stop_event.set()
+
+        thread = Thread(target=stop_soon)
+        thread.start()
+
+        # Should not raise
+        app.run(stop_event=stop_event)
+        thread.join()
+
+        # Handler was called despite raising
+        assert call_count[0] >= 1
+
+    def test_mixed_sync_async_handlers_both_execute(self, temp_dir: Path) -> None:
+        """Both sync and async handlers should execute for the same event."""
+        sync_events: list[FileEvent] = []
+        async_events: list[FileEvent] = []
+        both_completed = Event()
+
+        def sync_handler(event: FileEvent) -> None:
+            sync_events.append(event)
+            if async_events:
+                both_completed.set()
+
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0.01)
+            async_events.append(event)
+            if sync_events:
+                both_completed.set()
+
+        app = FlowWatchApp(debounce=0.1)
+        app.add_handler(
+            sync_handler, root=temp_dir, events=[Change.added], pattern="*.txt"
+        )
+        app.add_handler(
+            async_handler, root=temp_dir, events=[Change.added], pattern="*.txt"
+        )
+
+        stop_event = Event()
+
+        def create_file_and_stop() -> None:
+            time.sleep(0.2)
+            test_file = temp_dir / "shared_file.txt"
+            test_file.write_text("shared content")
+            both_completed.wait(timeout=2.0)
+            time.sleep(0.1)
+            stop_event.set()
+
+        thread = Thread(target=create_file_and_stop)
+        thread.start()
+
+        app.run(stop_event=stop_event)
+        thread.join()
+
+        assert len(sync_events) >= 1
+        assert len(async_events) >= 1
+        # Both should have received the same file
+        assert sync_events[0].path.name == "shared_file.txt"
+        assert async_events[0].path.name == "shared_file.txt"
+
+    def test_async_handler_with_process_existing(self, temp_dir: Path) -> None:
+        """Async handlers should work with process_existing=True."""
+        temp_dir = temp_dir.resolve()
+        # Create files before starting the watcher
+        file1 = temp_dir / "existing1.txt"
+        file2 = temp_dir / "existing2.txt"
+        file1.write_text("content1")
+        file2.write_text("content2")
+
+        processed_files: set[Path] = set()
+        processing_done = Event()
+
+        async def async_handler(event: FileEvent) -> None:
+            await asyncio.sleep(0.01)  # Simulate async I/O
+            processed_files.add(event.path)
+            if len(processed_files) >= 2:
+                processing_done.set()
+
+        app = FlowWatchApp(debounce=0.1)
+        app.add_handler(
+            async_handler,
+            root=temp_dir,
+            events=[Change.added],
+            pattern="*.txt",
+            process_existing=True,
+        )
+
+        stop_event = Event()
+
+        def stop_after_processing() -> None:
+            processing_done.wait(timeout=2.0)
+            time.sleep(0.1)
+            stop_event.set()
+
+        thread = Thread(target=stop_after_processing)
+        thread.start()
+
+        app.run(stop_event=stop_event)
+        thread.join()
+
+        assert len(processed_files) == 2
+        assert file1 in processed_files
+        assert file2 in processed_files
 

@@ -9,7 +9,7 @@ from .decorators import default_app, on_any, on_created, on_deleted, on_modified
 try:
     __version__ = version("flowwatch")
 except PackageNotFoundError:  # pragma: no cover
-    __version__ = "0.1.1"
+    __version__ = "0.1.2"
 
 # Backwards-compatible alias
 run_flowwatch = run
